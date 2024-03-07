@@ -12,11 +12,11 @@ use alloy_rpc_trace_types::{
     },
 };
 use revm::interpreter::{opcode, CallContext, CallScheme, CreateScheme, InstructionResult, OpCode};
-use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
 /// A trace of a call.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CallTrace {
     /// The depth of the call
     pub depth: usize,
@@ -120,6 +120,7 @@ impl Default for CallTrace {
 
 /// A node in the arena
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CallTraceNode {
     /// Parent node index in the arena
     pub parent: Option<usize>,
@@ -345,8 +346,9 @@ impl CallTraceNode {
 }
 
 /// A unified representation of a call.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "UPPERCASE")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "UPPERCASE"))]
 pub enum CallKind {
     /// Represents a regular call.
     #[default]
@@ -464,6 +466,7 @@ pub(crate) struct CallTraceStepStackItem<'a> {
 
 /// Ordering enum for calls and logs
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum LogCallOrder {
     /// Contains the index of the corresponding log
     Log(usize),
@@ -473,6 +476,7 @@ pub enum LogCallOrder {
 
 /// Represents a tracked call step during execution
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CallTraceStep {
     // Fields filled in `step`
     /// Call depth
@@ -480,6 +484,7 @@ pub struct CallTraceStep {
     /// Program counter before step execution
     pub pc: usize,
     /// Opcode to be executed
+    #[cfg_attr(feature = "serde", serde(with = "opcode_serde"))]
     pub op: OpCode,
     /// Current contract address
     pub contract: Address,
@@ -584,6 +589,7 @@ impl CallTraceStep {
 /// from an SSTORE or SLOAD instruction.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum StorageChangeReason {
     /// SLOAD opcode
     SLOAD,
@@ -599,6 +605,7 @@ pub enum StorageChangeReason {
 /// It is used to track both storage change and warm load of a storage slot. For warm load in regard
 /// to EIP-2929 AccessList had_value will be None.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StorageChange {
     /// key of the storage slot
     pub key: U256,
@@ -614,6 +621,7 @@ pub struct StorageChange {
 ///
 /// This is a wrapper around the [SharedMemory](revm::interpreter::SharedMemory) context memory.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RecordedMemory(pub(crate) Vec<u8>);
 
 impl RecordedMemory {
@@ -655,5 +663,27 @@ impl RecordedMemory {
 impl AsRef<[u8]> for RecordedMemory {
     fn as_ref(&self) -> &[u8] {
         self.as_bytes()
+    }
+}
+
+#[cfg(feature = "serde")]
+mod opcode_serde {
+    use super::OpCode;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub(super) fn serialize<S>(op: &OpCode, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u8(op.get())
+    }
+
+    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<OpCode, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let op = u8::deserialize(deserializer)?;
+        Ok(OpCode::new(op)
+            .unwrap_or_else(|| OpCode::new(revm::interpreter::opcode::INVALID).unwrap()))
     }
 }
